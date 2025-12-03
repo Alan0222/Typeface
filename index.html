@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Variable Font / Final Polish</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        /* --- 0. 全局设置 --- */
+        /* 【关键修复】万能盒模型：防止 padding 撑大元素导致出现滚动条 */
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --theme-color: #ffffff; 
+            --bg-color: #000000;
+        }
+
+        /* --- 核心基础 --- */
+        body {
+            margin: 0; padding: 0; 
+            background-color: var(--bg-color);
+            color: var(--theme-color);
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            overflow: hidden; 
+            height: 100dvh; 
+            width: 100vw; 
+            display: flex; flex-direction: column;
+            transition: background-color 0.3s ease;
+            user-select: none; -webkit-user-select: none;
+        }
+
+        /* --- UI 容器 --- */
+        .ui-layer {
+            position: fixed; 
+            top: 40px; left: 40px; 
+            z-index: 100;
+            display: flex; flex-direction: column; 
+            width: 240px; 
+        }
+
+        /* 1. 折叠按钮 */
+        .toggle-btn {
+            width: 40px; height: 40px; 
+            border-radius: 50%;
+            border: 1.5px solid color-mix(in srgb, var(--theme-color), transparent 65%);
+            background: rgba(0,0,0,0.5); 
+            backdrop-filter: blur(5px);
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.3s;
+            margin-bottom: 0; flex-shrink: 0;
+            z-index: 102; 
+            position: relative;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        @media (hover: hover) {
+            .toggle-btn:hover { transform: scale(1.1); background: rgba(255,255,255,0.1); border-color: var(--theme-color); }
+        }
+
+        .toggle-icon { width: 20px; height: 20px; fill: none; stroke: var(--theme-color); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: stroke 0.3s ease; }
+
+        /* 2. 可折叠内容 (桌面端默认) */
+        .ui-content {
+            display: flex; flex-direction: column; gap: 22px;
+            opacity: 0; 
+            transform: translateY(-10px) scale(0.95);
+            pointer-events: none; 
+            visibility: hidden;   
+            max-height: 80vh; 
+            
+            /* 【关键修复】禁止横向滚动条，只允许纵向滚动 */
+            overflow-x: hidden; 
+            overflow-y: auto; 
+            
+            margin-top: 20px;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); 
+            transform-origin: top left;
+            
+            /* 稍微给点 padding 防止滚动条遮挡内容 */
+            padding-right: 5px; 
+        }
+
+        /* 滚动条样式 */
+        .ui-content::-webkit-scrollbar { width: 4px; }
+        .ui-content::-webkit-scrollbar-track { background: transparent; }
+        .ui-content::-webkit-scrollbar-thumb { background: var(--theme-color); border-radius: 4px; opacity: 0.5; }
+
+        .ui-layer.active .ui-content { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; visibility: visible; }
+        .ui-layer.active .toggle-btn { transform: rotate(90deg); }
+
+        /* --- UI 组件样式 --- */
+        .file-upload-btn {
+            display: inline-block; cursor: pointer; font-size: 11px; font-weight: 700;
+            letter-spacing: 1px; text-transform: uppercase; 
+            border: 1px solid var(--theme-color); color: var(--theme-color);
+            padding: 10px 12px; width: fit-content; transition: all 0.3s;
+            background: rgba(0,0,0,0.1);
+        }
+        input[type="file"] { display: none; }
+
+        .control-block {
+            display: flex; flex-direction: column; gap: 8px;
+            border-left: 2px solid color-mix(in srgb, var(--theme-color), transparent 45%);
+            padding-left: 12px;
+        }
+
+        label {
+            font-size: 10px; font-weight: 600; color: var(--theme-color); 
+            opacity: 0.55; letter-spacing: 1.5px; text-transform: uppercase;
+            display: flex; justify-content: space-between;
+        }
+        .value-display { opacity: 1; font-weight: normal; } 
+
+        input[type="range"] { -webkit-appearance: none; width: 100%; background: transparent; margin: 15px 0; }
+        input[type="range"]:focus { outline: none; }
+        input[type="range"]::-webkit-slider-runnable-track { 
+            width: 100%; height: 1px; background: var(--theme-color); opacity: 1; border-radius: 0px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            height: 12px; width: 12px; border-radius: 50%; 
+            background: var(--theme-color); opacity: 1; margin-top: -5.5px; 
+            -webkit-appearance: none; cursor: pointer; border: none;
+        }
+
+        .color-row { display: flex; gap: 12px; margin-top: 5px; }
+        .color-btn {
+            width: 28px; height: 28px; border-radius: 50%; 
+            border: 1px solid var(--theme-color); overflow: hidden; position: relative; cursor: pointer;
+            background-color: #fff; transition: transform 0.2s;
+        }
+        input[type="color"] { position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; cursor: pointer; border: none; padding: 0; opacity: 0; }
+
+        .icon-btn {
+            background: none; border: 1px solid var(--theme-color); color: var(--theme-color); 
+            padding: 10px 20px; border-radius: 30px; cursor: pointer; 
+            font-size: 11px; letter-spacing: 1px; width: fit-content; 
+            transition: all 0.3s; margin-top: 15px; text-transform: uppercase;
+        }
+
+        /* --- HUD --- */
+        .camera-container {
+            position: fixed; bottom: 40px; right: 40px; width: 220px; height: 165px; z-index: 90;
+            background-color: var(--bg-color); filter: brightness(0.90); 
+            border: 1px solid var(--theme-color); box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+            border-radius: 12px; pointer-events: none;
+            display: flex; justify-content: center; align-items: center;
+            transition: all 0.3s ease;
+            border-color: rgba(255,255,255,0.15);
+        }
+        .input_video { display: none; }
+        .output_canvas { width: 100%; height: 100%; transform: scaleX(-1); }
+        .status-dot {
+            position: absolute; top: 12px; left: 12px; width: 6px; height: 6px;
+            background-color: var(--theme-color); border-radius: 50%; transition: 0.3s; opacity: 0.3;
+        }
+        .status-dot.active { opacity: 1; box-shadow: 0 0 8px var(--theme-color); }
+        .debug-info {
+            position: absolute; bottom: 10px; right: 12px;
+            font-family: monospace; font-size: 10px; color: var(--theme-color); 
+            text-align: right; text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+
+        /* --- 舞台 --- */
+        .stage {
+            flex: 1; display: flex; justify-content: center; align-items: center;
+            width: 100%; height: 100%; overflow: hidden; padding: 0; box-sizing: border-box;
+        }
+        .variable-text {
+            font-size: 15vmin; line-height: 1; text-align: center; outline: none; 
+            max-width: 90vw; max-height: 80vh;
+            white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex; justify-content: center; align-items: center;
+            user-select: text; -webkit-user-select: text;
+        }
+        #textInput {
+            background: transparent; border: none; 
+            border-bottom: 1px solid var(--theme-color); color: var(--theme-color); 
+            width: 100%; font-family: inherit; font-size: 14px;
+            outline: none; resize: none; overflow: hidden; height: 24px;
+        }
+
+        /* =======================================================
+           📱 移动端统一适配
+           ======================================================= */
+        @media (max-width: 1024px), (max-height: 600px) {
+            
+            .ui-layer { top: 20px; left: 20px; width: auto; }
+            .camera-container { bottom: 20px; right: 20px; width: 120px; height: 90px; border-radius: 8px; }
+            .debug-info { font-size: 8px; bottom: 5px; right: 5px; }
+            .status-dot { top: 6px; left: 6px; }
+
+            .ui-content {
+                position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; 
+                max-height: none; margin-top: 0; border-radius: 0;
+                background: rgba(0, 0, 0, 0.65); 
+                backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+                z-index: 101; 
+                padding: 80px 40px 40px 40px; 
+                
+                transform-origin: top left; transform: scale(0.95); opacity: 0;
+                
+                /* 移动端也禁止横向滚动 */
+                overflow-x: hidden; 
+                overflow-y: auto;
+            }
+            .ui-layer.active .ui-content { transform: scale(1); opacity: 1; }
+            
+            @media (orientation: landscape) {
+                .ui-content {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 22px; 
+                    justify-content: flex-start; 
+                    padding: 30px 40px 40px 90px; 
+                }
+                
+                .ui-content > * { flex-shrink: 0 !important; }
+                #fullscreenBtn { margin-bottom: 40px; }
+                .ui-layer { top: 20px; left: 20px; }
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ui-layer" id="uiLayer">
+        <div class="toggle-btn" id="toggleBtn" title="Settings">
+            <svg class="toggle-icon" viewBox="0 0 24 24">
+                <path d="M6 4V13" /> <circle cx="6" cy="16" r="2.3" /> <path d="M6 19V20" /> 
+                <path d="M12 4V5" /> <circle cx="12" cy="8" r="2.3" /> <path d="M12 11V20" /> 
+                <path d="M18 4V13" /> <circle cx="18" cy="16" r="2.3" /> <path d="M18 19V20" /> 
+            </svg>
+        </div>
+
+        <div class="ui-content" id="uiContent">
+            <div>
+                <label for="fontUpload" class="file-upload-btn" style="opacity:1">Upload Variable Font</label>
+                <input type="file" id="fontUpload" accept=".ttf,.otf,.woff,.woff2">
+                <div style="font-size:9px; opacity:0.5; margin-top:8px; line-height:1.4; color:var(--theme-color)">
+                    *Mobile: Tap to upload .ttf
+                </div>
+            </div>
+
+            <div class="control-block">
+                <label>Text Input</label>
+                <textarea id="textInput" rows="1">SYNC</textarea>
+            </div>
+
+            <div class="control-block">
+                <label>Font Size</label>
+                <input type="range" id="sizeRange" min="20" max="600" value="150">
+            </div>
+
+            <div class="control-block">
+                <label>Weight Range</label>
+                <input type="range" id="minWeightRange" min="1" max="1000" value="100">
+                <input type="range" id="maxWeightRange" min="1" max="1000" value="900">
+            </div>
+
+            <div class="control-block">
+                <label>Colors (Text / Bg)</label>
+                <div class="color-row">
+                    <div class="color-btn" id="textColorSwatch" title="Text Color">
+                        <input type="color" id="colorPicker" value="#ffffff">
+                    </div>
+                    <div class="color-btn" id="bgColorSwatch" title="Background Color">
+                        <input type="color" id="bgColorPicker" value="#000000">
+                    </div>
+                </div>
+            </div>
+
+            <button id="fullscreenBtn" class="icon-btn" style="margin-top:20px;">Full Screen</button>
+        </div>
+    </div>
+
+    <!-- HUD -->
+    <div class="camera-container" id="cameraBox">
+        <div class="status-dot" id="statusDot"></div>
+        <div class="debug-info" id="debugInfo">
+            W: <span id="debugW">0</span><br>
+            HUD: <span id="debugSmooth">OFF</span>
+        </div>
+        <video class="input_video" playsinline></video>
+        <canvas class="output_canvas"></canvas>
+    </div>
+
+    <div class="stage">
+        <div class="variable-text" id="variableText" contenteditable="true" spellcheck="false">SYNC</div>
+    </div>
+
+    <script>
+        const uiLayer = document.getElementById('uiLayer');
+        const toggleBtn = document.getElementById('toggleBtn');
+        toggleBtn.addEventListener('click', () => { uiLayer.classList.toggle('active'); });
+
+        const videoElement = document.querySelector('.input_video');
+        const canvasElement = document.querySelector('.output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const variableText = document.getElementById('variableText');
+        const statusDot = document.getElementById('statusDot');
+        const cameraBox = document.getElementById('cameraBox');
+        
+        const textColorSwatch = document.getElementById('textColorSwatch');
+        const bgColorSwatch = document.getElementById('bgColorSwatch');
+        const colorPicker = document.getElementById('colorPicker');
+        const bgColorPicker = document.getElementById('bgColorPicker');
+        const debugInfo = document.getElementById('debugInfo');
+
+        const minWInput = document.getElementById('minWeightRange');
+        const maxWInput = document.getElementById('maxWeightRange');
+        
+        let targetWeight = 400; let targetWidth = 100;
+        let currentWeight = 400; let currentWidth = 100;
+        const LERP_FACTOR = 0.08; 
+        let currentSkeletonColor = "#ffffff"; 
+        
+        function initColors() {
+            document.documentElement.style.setProperty('--theme-color', colorPicker.value);
+            document.documentElement.style.setProperty('--bg-color', bgColorPicker.value);
+            textColorSwatch.style.backgroundColor = colorPicker.value;
+            bgColorSwatch.style.backgroundColor = bgColorPicker.value;
+            variableText.style.color = colorPicker.value;
+            currentSkeletonColor = colorPicker.value;
+        }
+        initColors();
+
+        function animate() {
+            currentWeight = currentWeight + (targetWeight - currentWeight) * LERP_FACTOR;
+            currentWidth = currentWidth + (targetWidth - currentWidth) * LERP_FACTOR;
+            variableText.style.fontVariationSettings = `'wght' ${currentWeight.toFixed(1)}, 'wdth' ${currentWidth.toFixed(1)}`;
+            document.getElementById('debugW').innerText = Math.round(currentWeight);
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        document.getElementById('textInput').addEventListener('input', (e) => variableText.innerText = e.target.value);
+        variableText.addEventListener('input', (e) => document.getElementById('textInput').value = variableText.innerText);
+
+        document.getElementById('sizeRange').addEventListener('input', (e) => {
+            variableText.style.fontSize = e.target.value + 'px';
+        });
+
+        colorPicker.addEventListener('input', (e) => {
+            const newColor = e.target.value;
+            document.documentElement.style.setProperty('--theme-color', newColor);
+            textColorSwatch.style.backgroundColor = newColor;
+            variableText.style.color = newColor;
+            currentSkeletonColor = newColor;
+        });
+
+        bgColorPicker.addEventListener('input', (e) => {
+            const newColor = e.target.value;
+            document.documentElement.style.setProperty('--bg-color', newColor);
+            bgColorSwatch.style.backgroundColor = newColor;
+        });
+
+        document.getElementById('fullscreenBtn').addEventListener('click', () => {
+            if (document.documentElement.requestFullscreen) {
+                !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen();
+            }
+        });
+
+        document.getElementById('fontUpload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const fontData = event.target.result;
+                const fontFace = new FontFace('CustomVarFont', fontData);
+                fontFace.load().then((loadedFace) => {
+                    document.fonts.add(loadedFace);
+                    variableText.style.fontFamily = 'CustomVarFont';
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function onResults(results) {
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                statusDot.classList.add('active');
+                document.getElementById('debugSmooth').innerText = "ON";
+                const landmarks = results.multiHandLandmarks[0];
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: currentSkeletonColor, lineWidth: 1 });
+                drawLandmarks(canvasCtx, landmarks, { color: currentSkeletonColor, lineWidth: 0, radius: 2 });
+                const thumbTip = landmarks[4];
+                const indexTip = landmarks[8];
+                const distance = Math.sqrt(Math.pow(thumbTip.x - indexTip.x, 2) + Math.pow(thumbTip.y - indexTip.y, 2));
+                const handX = landmarks[9].x;
+                const minW = parseInt(minWInput.value);
+                const maxW = parseInt(maxWInput.value);
+                targetWeight = mapValue(distance, 0.02, 0.25, minW, maxW);
+                targetWidth = mapValue(1 - handX, 0.1, 0.9, 50, 150);
+            } else {
+                statusDot.classList.remove('active');
+                document.getElementById('debugSmooth').innerText = "WAIT";
+            }
+        }
+
+        function mapValue(value, inMin, inMax, outMin, outMax) {
+            if (value < inMin) value = inMin;
+            if (value > inMax) value = inMax;
+            return (value - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 320, height: 240
+        });
+        camera.start();
+    </script>
+</body>
